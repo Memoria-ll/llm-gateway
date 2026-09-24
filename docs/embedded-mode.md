@@ -10,8 +10,9 @@ checkout has no effect. The fork baseline is upstream commit
 release packages from a reviewed, fixed fork commit.
 
 Embedded mode creates a generic internal identity in the local Better Auth database
-after its schema is initialized. The browser receives a local session automatically;
-registration, login, password reset, admin setup, account and CLI pages/APIs,
+after its schema is initialized. The browser receives a local session automatically.
+Local management API requests need neither a login nor an `X-API-Key` header.
+Registration, login, password reset, admin setup, account and CLI pages/APIs,
 discovery surveys, billing upgrade, remote MCP, Sentry, GitHub star lookups,
 Manifest telemetry, and update checks are disabled. Startup refreshes for third-party
 model and pricing catalogs are also skipped. Provider OAuth and API-key flows remain

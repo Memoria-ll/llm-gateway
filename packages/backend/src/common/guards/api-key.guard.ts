@@ -37,8 +37,10 @@ export class ApiKeyGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<Request>();
 
-    // Skip if already authenticated via session (explicit flag prevents accidental bypass)
-    if ((request as Request & { authMethod?: string }).authMethod === 'session') return true;
+    // SessionGuard has already attached the local identity in embedded mode.
+    // Only trust its explicit auth flag, never a user object by itself.
+    const authMethod = (request as Request & { authMethod?: string }).authMethod;
+    if (authMethod === 'session' || authMethod === 'embedded') return true;
 
     const apiKey = request.headers['x-api-key'];
 

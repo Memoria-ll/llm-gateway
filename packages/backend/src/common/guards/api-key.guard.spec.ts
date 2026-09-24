@@ -255,6 +255,23 @@ describe('ApiKeyGuard', () => {
     expect(mockFind).not.toHaveBeenCalled();
   });
 
+  it('skips API key validation for the local identity attached in embedded mode', async () => {
+    const ctx = {
+      switchToHttp: () => ({
+        getRequest: () => ({
+          headers: {},
+          ip: '127.0.0.1',
+          authMethod: 'embedded',
+        }),
+      }),
+      getHandler: () => ({}),
+      getClass: () => ({}),
+    } as unknown as ExecutionContext;
+
+    await expect(guard.canActivate(ctx)).resolves.toBe(true);
+    expect(mockFind).not.toHaveBeenCalled();
+  });
+
   it('does not skip API key validation when user is set but authMethod is missing', async () => {
     const ctx = {
       switchToHttp: () => ({
