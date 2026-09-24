@@ -38,3 +38,7 @@ scripts/verify-free-model-ids.sh
 docs/superpowers/
 docs/plans/
 .superpowers/
+
+# codegraph
+.codegraph/
+.mcp.json
