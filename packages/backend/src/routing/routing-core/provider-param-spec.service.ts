@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { Injectable, Logger, type OnModuleInit } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { isEmbeddedMode } from '../../common/utils/manifest-mode';
 import {
   AUTH_TYPES,
   MODEL_CAPABILITIES,
@@ -86,6 +87,7 @@ export class ProviderParamSpecService implements OnModuleInit {
   private refreshInFlight: Promise<boolean> | null = null;
 
   onModuleInit(): void {
+    if (isEmbeddedMode()) return;
     // Fire-and-forget so a slow modelparams.dev fetch can't delay app.listen()
     // (same rationale as ModelsDevSyncService — see #1894). refreshCatalog
     // never rejects, so no dangling rejection to handle here.
@@ -105,7 +107,9 @@ export class ProviderParamSpecService implements OnModuleInit {
    * Returns true when a new catalog was applied.
    */
   refreshCatalog(): Promise<boolean> {
-    if (process.env.MODELPARAMS_API_DISABLED === 'true') return Promise.resolve(false);
+    if (isEmbeddedMode() || process.env.MODELPARAMS_API_DISABLED === 'true') {
+      return Promise.resolve(false);
+    }
     // Concurrent callers share one in-flight refresh instead of racing the swap.
     if (this.refreshInFlight) return this.refreshInFlight;
     this.refreshInFlight = this.fetchAndSwapCatalog()

@@ -2,7 +2,7 @@ import { useLocation, useNavigate, useSearchParams } from '@solidjs/router';
 import { Show, createEffect, createSignal, onMount, type ParentComponent } from 'solid-js';
 import { authClient } from '../services/auth-client.js';
 import { getAuthDestination, signedOAuthDestination } from '../services/auth-redirects.js';
-import { checkNeedsSetup } from '../services/setup-status.js';
+import { checkIsEmbeddedMode, checkNeedsSetup } from '../services/setup-status.js';
 import { hasPlanBeenChosen } from '../services/plan-selection.js';
 import { getDiscoveryPendingNext } from '../services/discovery.js';
 
@@ -15,6 +15,10 @@ const GuestGuard: ParentComponent = (props) => {
   const [ready, setReady] = createSignal(false);
 
   onMount(async () => {
+    if (await checkIsEmbeddedMode()) {
+      navigate('/providers/usage-based', { replace: true });
+      return;
+    }
     const needsSetup = await checkNeedsSetup();
     if (needsSetup) {
       navigate('/setup', { replace: true });

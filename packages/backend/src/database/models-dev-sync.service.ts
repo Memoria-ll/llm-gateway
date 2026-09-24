@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { isEmbeddedMode } from '../common/utils/manifest-mode';
 import { normalizeProviderName, type ModelCapability, type ModelModality } from 'manifest-shared';
 import { PROVIDER_BY_ID_OR_ALIAS } from '../common/constants/providers';
 import {
@@ -283,6 +284,7 @@ export class ModelsDevSyncService implements OnModuleInit {
   private initialLoad: Promise<void> | null = null;
 
   onModuleInit(): void {
+    if (isEmbeddedMode()) return;
     // Fire-and-forget so a slow models.dev fetch can't delay app.listen() and
     // trip Railway's healthcheck (see #1894). ModelPricingCacheService awaits
     // whenInitialized() before its first reload so warmup still sees data.
@@ -300,6 +302,7 @@ export class ModelsDevSyncService implements OnModuleInit {
 
   @Cron(CronExpression.EVERY_DAY_AT_4AM)
   async refreshCache(): Promise<number> {
+    if (isEmbeddedMode()) return 0;
     this.logger.log('Refreshing models.dev cache...');
     const raw = await this.fetchModelsDevData();
     if (!raw) return 0;

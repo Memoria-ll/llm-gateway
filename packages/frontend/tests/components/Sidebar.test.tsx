@@ -40,6 +40,7 @@ let mockIsSelfHosted = true;
 // the nav entry goes with it.
 let mockMcpEnabled = true;
 vi.mock("../../src/services/setup-status.js", () => ({
+  checkIsEmbeddedMode: () => Promise.resolve(false),
   checkIsSelfHosted: () => Promise.resolve(mockIsSelfHosted),
   checkMcpEnabled: () => Promise.resolve(mockMcpEnabled),
 }));

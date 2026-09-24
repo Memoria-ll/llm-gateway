@@ -1,4 +1,5 @@
 import { existsSync } from 'fs';
+import { isEmbeddedMode } from './manifest-mode';
 
 /**
  * Detects whether the app is running in the self-hosted version.
@@ -14,6 +15,7 @@ import { existsSync } from 'fs';
  * 3. Default → cloud
  */
 export function isSelfHosted(): boolean {
+  if (isEmbeddedMode()) return true;
   const explicit = process.env['MANIFEST_MODE'];
   if (explicit === 'cloud') return false;
   if (explicit === 'selfhosted' || explicit === 'local') return true;

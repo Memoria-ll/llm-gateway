@@ -5,6 +5,7 @@ import { OLLAMA_HOST } from '../common/constants/ollama';
 import { getContainerHostAlias, isSelfHosted } from '../common/utils/detect-self-hosted';
 import { isEmailConfigured } from '../notifications/services/email-providers/send-email';
 import { mcpAvailability } from '../auth/mcp-availability';
+import { isEmbeddedMode } from '../common/utils/manifest-mode';
 
 /**
  * Postgres advisory lock key reserved for the first-run setup wizard.
@@ -94,6 +95,7 @@ export class SetupService {
    * login form on a fresh install.
    */
   async needsSetup(): Promise<boolean> {
+    if (isEmbeddedMode()) return false;
     const rows = await this.dataSource.query<{ count: string }[]>(
       `SELECT COUNT(*) AS count FROM "user"`,
     );

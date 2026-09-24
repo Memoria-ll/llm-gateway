@@ -2,8 +2,9 @@
 // process environment provides SENTRY_DSN.
 import * as Sentry from '@sentry/nestjs';
 import { buildSentryInitOptions } from './sentry/sentry-options';
+import { isEmbeddedMode } from './common/utils/manifest-mode';
 
-const options = buildSentryInitOptions(process.env);
+const options = isEmbeddedMode() ? undefined : buildSentryInitOptions(process.env);
 if (options) {
   Sentry.init(options);
 }

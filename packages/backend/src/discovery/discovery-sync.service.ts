@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { isSelfHosted } from '../common/utils/detect-self-hosted';
+import { isEmbeddedMode } from '../common/utils/manifest-mode';
 import { CompleteDiscoveryDto } from './dto/complete-discovery.dto';
 
 const DEFAULT_DISCOVERY_ENDPOINT = 'https://blue.manifest.build/v1/self-hosted/discovery';
@@ -10,6 +11,7 @@ export class DiscoverySyncService {
   private readonly logger = new Logger(DiscoverySyncService.name);
 
   async submit(submission: CompleteDiscoveryDto): Promise<void> {
+    if (isEmbeddedMode()) return;
     if (!isSelfHosted() || process.env['NODE_ENV'] !== 'production') return;
     if (!hasContent(submission)) return;
 

@@ -23,6 +23,7 @@ vi.mock('../../src/services/auth-client.js', () => ({
 }));
 
 vi.mock('../../src/services/setup-status.js', () => ({
+  checkIsEmbeddedMode: () => Promise.resolve(false),
   checkNeedsSetup: (...args: unknown[]) => mockCheckNeedsSetup(...args),
 }));
 

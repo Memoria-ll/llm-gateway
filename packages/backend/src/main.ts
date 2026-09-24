@@ -28,6 +28,8 @@ import {
 } from './cors-csp-config';
 import { createRateLimitReachedHandler } from './common/middleware/rate-limit-log';
 import { shouldCompress } from './routing/proxy/compression-filter';
+import { createEmbeddedSession } from './auth/embedded-identity';
+import { isEmbeddedMode, isLoopbackHost } from './common/utils/manifest-mode';
 
 export async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -91,12 +93,14 @@ export async function bootstrap() {
   //
   // See `buildCorsOptions` for the rationale behind `credentials: false`, the
   // omitted `allowedHeaders`, and the preflight `maxAge`.
-  const corsAllowedOrigins = isDev
-    ? buildDevAllowedOrigins({
-        configuredOrigin: process.env['CORS_ORIGIN'] || 'http://localhost:3000',
-        wingmanPort,
-      })
-    : buildProdAllowedOrigins({ extraOrigins: process.env['WINGMAN_CORS_ORIGINS'] });
+  const corsAllowedOrigins = isEmbeddedMode()
+    ? []
+    : isDev
+      ? buildDevAllowedOrigins({
+          configuredOrigin: process.env['CORS_ORIGIN'] || 'http://localhost:3000',
+          wingmanPort,
+        })
+      : buildProdAllowedOrigins({ extraOrigins: process.env['WINGMAN_CORS_ORIGINS'] });
   // Legacy Private Network Access support, for browsers older than Chrome 138.
   // Newer Chrome replaced PNA with Local Network Access, a user permission that
   // no response header can satisfy — so this does *not* fix a blocked
@@ -139,6 +143,33 @@ export async function bootstrap() {
   const expressApp = app.getHttpAdapter().getInstance();
 
   expressApp.use(httpErrorLogger);
+
+  if (isEmbeddedMode()) {
+    // Local mode has no user login, so reject browser requests from other
+    // origins (including DNS-rebinding hostnames) before public or protected
+    // controllers can handle them.
+    expressApp.use((req: express.Request, res: express.Response, next: express.NextFunction) => {
+      const origin = req.get('origin');
+      if (!origin) return next();
+      try {
+        const originUrl = new URL(origin);
+        const requestHost = req.get('host') ?? '';
+        const requestUrl = new URL(`http://${requestHost}`);
+        if (
+          !isLoopbackHost(originUrl.hostname) ||
+          !isLoopbackHost(requestUrl.hostname) ||
+          originUrl.host.toLowerCase() !== requestUrl.host.toLowerCase()
+        ) {
+          res.sendStatus(403);
+          return;
+        }
+      } catch {
+        res.sendStatus(403);
+        return;
+      }
+      next();
+    });
+  }
 
   // Trust reverse proxy (Railway, Render, Traefik, Nginx, etc.) so Express
   // sees the real client IP from X-Forwarded-For headers. Enabled in
@@ -212,8 +243,16 @@ export async function bootstrap() {
 
   // Mount Better Auth handler (needs raw body, before express.json)
   const { toNodeHandler } = await import('better-auth/node');
-  const authHandler = (request: Request) =>
-    auth.handler(request).then((response) => mcpOAuthResponse(request, response));
+  const authHandler = (request: Request) => {
+    if (isEmbeddedMode()) {
+      const path = new URL(request.url, 'http://127.0.0.1').pathname;
+      if (request.method === 'GET' && path.endsWith('/get-session')) {
+        return Promise.resolve(Response.json(createEmbeddedSession()));
+      }
+      return Promise.resolve(new Response('Not Found', { status: 404 }));
+    }
+    return auth.handler(request).then((response) => mcpOAuthResponse(request, response));
+  };
   expressApp.all(
     '/api/auth/*splat',
     // Better Auth's adapter checks for a handler property and delegates to it.
@@ -242,7 +281,7 @@ export async function bootstrap() {
   }
 
   const port = Number(process.env['PORT'] ?? 3001);
-  const host = process.env['BIND_ADDRESS'] ?? '127.0.0.1';
+  const host = isEmbeddedMode() ? '127.0.0.1' : (process.env['BIND_ADDRESS'] ?? '127.0.0.1');
   await app.listen(port, host);
   logger.log(`Server running on http://${host}:${port}`);
 
