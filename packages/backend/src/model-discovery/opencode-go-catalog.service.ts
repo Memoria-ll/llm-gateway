@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { isEmbeddedMode } from '../common/utils/manifest-mode';
 
 export interface OpencodeGoCatalogEntry {
   /** Bare model ID as listed in the docs (e.g. "glm-5.1"). */
@@ -64,6 +65,7 @@ export class OpencodeGoCatalogService implements OnModuleInit {
    * existing fetch-on-demand path in `list()`.
    */
   onModuleInit(): void {
+    if (isEmbeddedMode()) return;
     void this.list().catch(() => {
       // `list()` already logs failures and arms the error-backoff window.
     });

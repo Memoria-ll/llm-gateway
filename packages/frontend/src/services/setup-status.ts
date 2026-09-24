@@ -11,6 +11,7 @@ interface SetupStatusResponse {
   localLlmHost?: string;
   emailConfigured?: boolean;
   mcpEnabled?: boolean;
+  embeddedMode?: boolean;
 }
 
 interface SetupStatusResult {
@@ -21,6 +22,7 @@ interface SetupStatusResult {
   localLlmHost: string;
   emailConfigured: boolean;
   mcpEnabled: boolean;
+  embeddedMode: boolean;
 }
 
 let cachedPromise: Promise<SetupStatusResult> | null = null;
@@ -40,6 +42,7 @@ async function fetchSetupStatus(): Promise<SetupStatusResult> {
         localLlmHost: 'localhost',
         emailConfigured: true,
         mcpEnabled: true,
+        embeddedMode: false,
       };
     const data = (await res.json()) as SetupStatusResponse;
     return {
@@ -53,6 +56,7 @@ async function fetchSetupStatus(): Promise<SetupStatusResult> {
       emailConfigured: data.emailConfigured !== false,
       // Same reasoning, plus a backend older than this field always serves MCP.
       mcpEnabled: data.mcpEnabled !== false,
+      embeddedMode: data.embeddedMode === true,
     };
   } catch {
     return {
@@ -63,6 +67,7 @@ async function fetchSetupStatus(): Promise<SetupStatusResult> {
       localLlmHost: 'localhost',
       emailConfigured: true,
       mcpEnabled: true,
+      embeddedMode: false,
     };
   }
 }
@@ -84,6 +89,10 @@ export async function checkSocialProviders(): Promise<string[]> {
 
 export async function checkIsSelfHosted(): Promise<boolean> {
   return (await getSetupStatus()).isSelfHosted;
+}
+
+export async function checkIsEmbeddedMode(): Promise<boolean> {
+  return (await getSetupStatus()).embeddedMode;
 }
 
 export async function checkIsOllamaAvailable(): Promise<boolean> {

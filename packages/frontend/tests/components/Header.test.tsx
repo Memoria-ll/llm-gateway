@@ -52,6 +52,7 @@ vi.mock('../../src/services/agent-display-name.js', () => ({
 
 const mockCheckIsSelfHosted = vi.fn().mockResolvedValue(false);
 vi.mock('../../src/services/setup-status.js', () => ({
+  checkIsEmbeddedMode: () => Promise.resolve(false),
   checkIsSelfHosted: () => mockCheckIsSelfHosted(),
 }));
 
@@ -93,45 +94,45 @@ describe('Header', () => {
     expect(imgs.length).toBe(2);
   });
 
-  it('shows user initials', () => {
+  it('shows user initials', async () => {
     render(() => <Header />);
-    expect(screen.getByText('A')).toBeDefined();
+    expect(await screen.findByText('A')).toBeDefined();
   });
 
-  it('shows user menu button', () => {
+  it('shows user menu button', async () => {
     render(() => <Header />);
-    expect(screen.getByLabelText('User menu')).toBeDefined();
+    expect(await screen.findByLabelText('User menu')).toBeDefined();
   });
 
   it('opens dropdown on click', async () => {
     render(() => <Header />);
-    await fireEvent.click(screen.getByLabelText('User menu'));
+    await fireEvent.click(await screen.findByLabelText('User menu'));
     expect(screen.getByText('Alice')).toBeDefined();
     expect(screen.getByText('alice@test.com')).toBeDefined();
   });
 
   it('shows Account Preferences link in dropdown', async () => {
     render(() => <Header />);
-    await fireEvent.click(screen.getByLabelText('User menu'));
+    await fireEvent.click(await screen.findByLabelText('User menu'));
     expect(screen.getByText('Account Preferences')).toBeDefined();
   });
 
   it('shows Log out button in dropdown', async () => {
     render(() => <Header />);
-    await fireEvent.click(screen.getByLabelText('User menu'));
+    await fireEvent.click(await screen.findByLabelText('User menu'));
     expect(screen.getByText('Log out')).toBeDefined();
   });
 
   it('calls signOut when Log out clicked', async () => {
     render(() => <Header />);
-    await fireEvent.click(screen.getByLabelText('User menu'));
+    await fireEvent.click(await screen.findByLabelText('User menu'));
     await fireEvent.click(screen.getByText('Log out'));
     expect(mockSignOut).toHaveBeenCalled();
   });
 
   it('navigates to login after signOut', async () => {
     render(() => <Header />);
-    await fireEvent.click(screen.getByLabelText('User menu'));
+    await fireEvent.click(await screen.findByLabelText('User menu'));
     await fireEvent.click(screen.getByText('Log out'));
     await vi.waitFor(() => {
       expect(mockLocationReplace).toHaveBeenCalledWith('/login');
@@ -140,7 +141,7 @@ describe('Header', () => {
 
   it('closes dropdown when clicking outside', async () => {
     render(() => <Header />);
-    await fireEvent.click(screen.getByLabelText('User menu'));
+    await fireEvent.click(await screen.findByLabelText('User menu'));
     expect(screen.getByText('Alice')).toBeDefined();
     await fireEvent.click(document.body);
     expect(screen.queryByText('Alice')).toBeNull();

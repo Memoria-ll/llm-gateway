@@ -39,6 +39,7 @@ import { McpModule } from './mcp/mcp.module';
 import { mcpAvailability } from './auth/mcp-availability';
 import { isSelfHosted } from './common/utils/detect-self-hosted';
 import { DebugSentryController } from './sentry/debug-sentry.controller';
+import { isEmbeddedMode } from './common/utils/manifest-mode';
 
 const frontendPath = resolveFrontendDir();
 const ONE_YEAR_S = 365 * 24 * 60 * 60;
@@ -62,7 +63,9 @@ const serveStaticImports = frontendPath
     ]
   : [];
 
-const sentryEnabled = Boolean(process.env['SENTRY_DSN']?.trim());
+const embeddedMode = isEmbeddedMode();
+const authImports = embeddedMode ? [] : [AuthModule];
+const sentryEnabled = !embeddedMode && Boolean(process.env['SENTRY_DSN']?.trim());
 const sentryImports = sentryEnabled ? [SentryModule.forRoot()] : [];
 const sentryProviders = sentryEnabled
   ? [{ provide: APP_FILTER, useClass: SentryGlobalFilter }]
@@ -82,6 +85,8 @@ const crmMetricsImports = isSelfHosted() ? [] : [CrmMetricsModule];
 // unauthenticated 401 that no client could ever satisfy — the OAuth
 // authorization server behind it is not running either.
 const mcpImports = mcpAvailability().enabled ? [McpModule] : [];
+const discoveryImports = embeddedMode ? [] : [DiscoveryModule];
+const githubImports = embeddedMode ? [] : [GithubModule];
 
 @Module({
   imports: [
@@ -102,7 +107,7 @@ const mcpImports = mcpAvailability().enabled ? [McpModule] : [];
     CommonModule,
     DatabaseModule,
     TypeOrmModule.forFeature([ApiKey]),
-    AuthModule,
+    ...authImports,
     HealthModule,
     AnalyticsModule,
     OtlpModule,
@@ -111,7 +116,7 @@ const mcpImports = mcpAvailability().enabled ? [McpModule] : [];
     RoutingModule,
     PlaygroundModule,
     SseModule,
-    GithubModule,
+    ...githubImports,
     VersionModule,
     ErrorPagesModule,
     SetupModule,
@@ -120,7 +125,7 @@ const mcpImports = mcpAvailability().enabled ? [McpModule] : [];
     BackfillModule,
     WaitlistModule,
     BillingModule,
-    DiscoveryModule,
+    ...discoveryImports,
     ...mcpImports,
     ...crmMetricsImports,
   ],

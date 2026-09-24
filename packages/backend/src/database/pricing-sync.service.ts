@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { isEmbeddedMode } from '../common/utils/manifest-mode';
 
 interface OpenRouterModel {
   id: string;
@@ -37,6 +38,7 @@ export class PricingSyncService implements OnModuleInit {
   private initialLoad: Promise<void> | null = null;
 
   onModuleInit(): void {
+    if (isEmbeddedMode()) return;
     // Kick off the startup fetch WITHOUT blocking boot. A slow or unreachable
     // OpenRouter previously stalled app.listen() — and with it Railway's
     // healthcheck — for up to undici's default header timeout (see #1894).
@@ -57,6 +59,7 @@ export class PricingSyncService implements OnModuleInit {
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async refreshCache(): Promise<number> {
+    if (isEmbeddedMode()) return 0;
     this.logger.log('Refreshing OpenRouter pricing cache...');
     const data = await this.fetchOpenRouterModels();
     if (!data) return 0;

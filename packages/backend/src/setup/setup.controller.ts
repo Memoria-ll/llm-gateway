@@ -1,7 +1,16 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  NotFoundException,
+  Post,
+} from '@nestjs/common';
 import { Public } from '../common/decorators/public.decorator';
 import { CreateAdminDto } from './dto/create-admin.dto';
 import { SetupService } from './setup.service';
+import { isEmbeddedMode } from '../common/utils/manifest-mode';
 
 @Controller('api/v1/setup')
 export class SetupController {
@@ -17,9 +26,12 @@ export class SetupController {
     localLlmHost: string;
     emailConfigured: boolean;
     mcpEnabled: boolean;
+    embeddedMode: boolean;
   }> {
+    const embeddedMode = isEmbeddedMode();
     const selfHosted = this.setupService.isSelfHosted();
-    const ollamaAvailable = selfHosted ? await this.setupService.isOllamaAvailable() : false;
+    const ollamaAvailable =
+      selfHosted && !embeddedMode ? await this.setupService.isOllamaAvailable() : false;
     return {
       needsSetup: await this.setupService.needsSetup(),
       socialProviders: this.setupService.getEnabledSocialProviders(),
@@ -28,6 +40,7 @@ export class SetupController {
       localLlmHost: this.setupService.getLocalLlmHost(),
       emailConfigured: this.setupService.isEmailConfigured(),
       mcpEnabled: this.setupService.isMcpEnabled(),
+      embeddedMode,
     };
   }
 
@@ -35,6 +48,7 @@ export class SetupController {
   @Post('admin')
   @HttpCode(HttpStatus.CREATED)
   async createAdmin(@Body() dto: CreateAdminDto): Promise<{ ok: true }> {
+    if (isEmbeddedMode()) throw new NotFoundException();
     await this.setupService.createFirstAdmin(dto);
     return { ok: true };
   }

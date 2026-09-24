@@ -51,9 +51,11 @@ RUN --mount=type=cache,target=/root/.npm \
     find . -path "*/node_modules/@esbuild" -type d -exec rm -rf {} + 2>/dev/null; \
     find . -path "*/node_modules/@vitest" -type d -exec rm -rf {} + 2>/dev/null; \
     find . -path "*/node_modules/*" \( -name "*.map" -o -name "README*" \
-      -o -name "LICENSE*" -o -name "CHANGELOG*" -o -name "*.txt" \
+      -o -name "CHANGELOG*" -o -name "*.txt" \
       -o -name "*.md" -o -name "Makefile" -o -name "*.gyp" -o -name "*.gypi" \
-      -o \( -name "*.ts" ! -name "*.d.ts" \) \) -delete 2>/dev/null; \
+      -o \( -name "*.ts" ! -name "*.d.ts" \) \) \
+      ! -iname "licen[cs]e*" ! -iname "copying*" ! -iname "notice*" \
+      ! -iname "copyright*" -delete 2>/dev/null; \
     find . -path "*/node_modules/*" -type d \( -name "__tests__" -o -name "test" \
       -o -name "tests" -o -name "docs" -o -name "example" \
       -o -name "examples" -o -name ".github" \) -exec rm -rf {} + 2>/dev/null; \
@@ -89,6 +91,7 @@ COPY --from=build --chown=nonroot:nonroot /app/packages/backend/dist packages/ba
 COPY --from=build --chown=nonroot:nonroot /app/packages/frontend/dist packages/frontend/dist
 COPY --chown=nonroot:nonroot packages/shared/package.json packages/shared/
 COPY --chown=nonroot:nonroot packages/backend/package.json packages/backend/
+COPY --chown=nonroot:nonroot LICENSE LICENSE
 # The telemetry sender reads the canonical Manifest version from this
 # file at boot. Without it, readManifestVersion() falls back to "unknown"
 # and the sender ends up posting invalid semver to the ingest endpoint.

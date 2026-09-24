@@ -19,6 +19,12 @@ import { encodeRequestRecording } from '../common/utils/request-recording-codec'
 import type { StoredAttemptRecording } from '../routing/proxy/attempt-recording.types';
 import { getSeedConnections, seedAgentMessages, seedConnectionId } from './seed-messages';
 import { seedRoutingCohorts } from './seed-cohorts';
+import { isEmbeddedMode } from '../common/utils/manifest-mode';
+import {
+  EMBEDDED_USER_EMAIL,
+  EMBEDDED_USER_ID,
+  EMBEDDED_USER_NAME,
+} from '../auth/embedded-identity';
 
 const SEED_API_KEY = 'dev-api-key-manifest-001';
 const SEED_OTLP_KEY = 'mnfst_dev-otlp-key-001';
@@ -138,6 +144,11 @@ export class DatabaseSeederService implements OnModuleInit {
   async onModuleInit() {
     await this.runBetterAuthMigrations();
 
+    if (isEmbeddedMode()) {
+      await this.ensureEmbeddedIdentity();
+      return;
+    }
+
     const seedData = this.configService.get<string>('SEED_DATA');
     if (seedData !== 'true') return;
 
@@ -188,6 +199,16 @@ export class DatabaseSeederService implements OnModuleInit {
   private async runBetterAuthMigrations() {
     const ctx = await auth.$context;
     await ctx.runMigrations();
+  }
+
+  private async ensureEmbeddedIdentity(): Promise<void> {
+    await this.dataSource.query(
+      `INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, true, NOW(), NOW())
+       ON CONFLICT (id) DO NOTHING`,
+      [EMBEDDED_USER_ID, EMBEDDED_USER_NAME, EMBEDDED_USER_EMAIL],
+    );
+    this.logger.log('Initialized the local Embedded Manifest identity.');
   }
 
   private async seedAdminUser() {

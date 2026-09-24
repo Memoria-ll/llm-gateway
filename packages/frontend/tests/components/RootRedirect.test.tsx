@@ -1,19 +1,37 @@
-import { describe, it, expect, vi } from "vitest";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { render } from "@solidjs/testing-library";
 
+const mockNavigate = vi.fn();
+let mockEmbeddedMode = false;
+
 vi.mock("@solidjs/router", () => ({
-  Navigate: (props: Record<string, unknown>) => (
-    <div data-testid="navigate" data-href={props.href as string} />
-  ),
+  useNavigate: () => mockNavigate,
+}));
+
+vi.mock("../../src/services/setup-status.js", () => ({
+  checkIsEmbeddedMode: () => Promise.resolve(mockEmbeddedMode),
 }));
 
 import RootRedirect from "../../src/components/RootRedirect";
 
 describe("RootRedirect", () => {
-  it("redirects the root path to the global Overview", () => {
-    const { container } = render(() => <RootRedirect />);
-    const navigate = container.querySelector('[data-testid="navigate"]');
-    expect(navigate).not.toBeNull();
-    expect(navigate?.getAttribute("data-href")).toBe("/overview");
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockEmbeddedMode = false;
+  });
+
+  it("redirects the root path to the global Overview", async () => {
+    render(() => <RootRedirect />);
+    await vi.waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith("/overview", { replace: true }),
+    );
+  });
+
+  it("redirects the root path to usage-based providers in Embedded mode", async () => {
+    mockEmbeddedMode = true;
+    render(() => <RootRedirect />);
+    await vi.waitFor(() =>
+      expect(mockNavigate).toHaveBeenCalledWith("/providers/usage-based", { replace: true }),
+    );
   });
 });

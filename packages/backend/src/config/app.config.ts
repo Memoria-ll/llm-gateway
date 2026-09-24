@@ -1,9 +1,23 @@
 import { registerAs } from '@nestjs/config';
 import { optionalPositiveInteger } from './env.util';
+import { isEmbeddedMode, isLoopbackHost } from '../common/utils/manifest-mode';
 
 function resolveDatabaseUrl(): string {
   const url = process.env['DATABASE_URL'];
-  if (url) return url;
+  if (url) {
+    if (isEmbeddedMode()) {
+      let hostname: string;
+      try {
+        hostname = new URL(url).hostname;
+      } catch {
+        throw new Error('Embedded Manifest requires a valid local DATABASE_URL.');
+      }
+      if (!isLoopbackHost(hostname)) {
+        throw new Error('Embedded Manifest requires DATABASE_URL to use a loopback host.');
+      }
+    }
+    return url;
+  }
   if (process.env['NODE_ENV'] === 'test')
     return 'postgresql://myuser:mypassword@localhost:5432/mydatabase';
   throw new Error('DATABASE_URL is required. Set it in your .env file.');

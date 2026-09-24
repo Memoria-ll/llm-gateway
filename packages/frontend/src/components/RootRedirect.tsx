@@ -1,6 +1,15 @@
-import { Navigate } from '@solidjs/router';
-import type { Component } from 'solid-js';
+import { useNavigate } from '@solidjs/router';
+import { type Component, onMount } from 'solid-js';
+import { checkIsEmbeddedMode } from '../services/setup-status.js';
 
-const RootRedirect: Component = () => <Navigate href="/overview" />;
+const RootRedirect: Component = () => {
+  const navigate = useNavigate();
+  onMount(async () => {
+    navigate((await checkIsEmbeddedMode()) ? '/providers/usage-based' : '/overview', {
+      replace: true,
+    });
+  });
+  return null;
+};
 
 export default RootRedirect;

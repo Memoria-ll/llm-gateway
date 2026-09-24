@@ -68,6 +68,7 @@ describe('SetupController', () => {
         localLlmHost: 'localhost',
         emailConfigured: true,
         mcpEnabled: true,
+        embeddedMode: false,
       });
     });
 
@@ -82,6 +83,7 @@ describe('SetupController', () => {
         localLlmHost: 'localhost',
         emailConfigured: true,
         mcpEnabled: true,
+        embeddedMode: false,
       });
     });
 
@@ -97,6 +99,7 @@ describe('SetupController', () => {
         localLlmHost: 'localhost',
         emailConfigured: true,
         mcpEnabled: true,
+        embeddedMode: false,
       });
     });
 
@@ -113,6 +116,7 @@ describe('SetupController', () => {
         localLlmHost: 'localhost',
         emailConfigured: true,
         mcpEnabled: true,
+        embeddedMode: false,
       });
     });
 
@@ -129,6 +133,7 @@ describe('SetupController', () => {
         localLlmHost: 'localhost',
         emailConfigured: true,
         mcpEnabled: true,
+        embeddedMode: false,
       });
     });
 

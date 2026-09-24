@@ -7,6 +7,8 @@ import { auth } from './auth.instance';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 import { TenantCacheService } from '../common/services/tenant-cache.service';
 import { RequestWithTenantContext } from '../common/decorators/tenant-context.decorator';
+import { isEmbeddedMode } from '../common/utils/manifest-mode';
+import { EMBEDDED_USER_ID, EMBEDDED_USER_NAME } from './embedded-identity';
 
 interface CachedSession {
   user: unknown;
@@ -45,8 +47,25 @@ export class SessionGuard implements CanActivate, OnModuleDestroy {
 
     const request = context.switchToHttp().getRequest<Request>();
 
-    // Let API-key authenticated requests be handled by ApiKeyGuard
+    // Let API-key authenticated requests be handled by ApiKeyGuard.
     if (request.headers['x-api-key']) return true;
+
+    if (isEmbeddedMode()) {
+      const now = new Date();
+      const user = {
+        id: EMBEDDED_USER_ID,
+        name: EMBEDDED_USER_NAME,
+        email: '',
+        emailVerified: true,
+        image: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      (request as Request & { user: unknown }).user = user;
+      (request as Request & { authMethod: string }).authMethod = 'embedded';
+      await this.attachTenantContext(request, user);
+      return true;
+    }
 
     // In the self-hosted version without Better Auth, skip session lookup
     if (!auth) return true;

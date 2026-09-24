@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { isEmbeddedMode } from '../common/utils/manifest-mode';
 
 export interface GitHubModel {
   id: string | null;
@@ -70,6 +71,7 @@ export class FreeModelsSyncService implements OnModuleInit {
   private lastFetchedAt: Date | null = null;
 
   onModuleInit(): void {
+    if (isEmbeddedMode()) return;
     // Fire-and-forget so a slow GitHub fetch can't delay app.listen() and trip
     // Railway's healthcheck (see #1894). Nothing reads this cache during boot;
     // the free-models endpoints tolerate an empty cache until the fetch lands.
@@ -80,6 +82,7 @@ export class FreeModelsSyncService implements OnModuleInit {
 
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async refreshCache(): Promise<number> {
+    if (isEmbeddedMode()) return 0;
     this.logger.log('Refreshing free models cache from GitHub...');
     const data = await this.fetchData();
     if (!data) return 0;

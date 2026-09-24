@@ -12,7 +12,7 @@ import { useAgentName } from '../services/routing.js';
 import { authClient } from '../services/auth-client.js';
 import { agentDisplayName } from '../services/agent-display-name.js';
 import { agentPlatformIcon } from '../services/agent-platform-store.js';
-import { checkIsSelfHosted } from '../services/setup-status.js';
+import { checkIsEmbeddedMode, checkIsSelfHosted } from '../services/setup-status.js';
 import NotificationBell from './NotificationBell.jsx';
 import { getBillingStatus } from '../services/api/billing.js';
 import {
@@ -49,6 +49,7 @@ const Header: Component<HeaderProps> = (props) => {
     sessionStorage.getItem(STAR_DISMISSED_KEY) === 'true',
   );
   const [isSelfHosted, setIsSelfHosted] = createSignal(false);
+  const [embeddedMode, setEmbeddedMode] = createSignal<boolean | null>(null);
   const session = authClient.useSession();
   const navigate = useNavigate();
   const [billing] = createResource(async () => {
@@ -61,8 +62,11 @@ const Header: Component<HeaderProps> = (props) => {
   const isPro = () => billing()?.enabled && billing()?.plan === 'pro';
 
   onMount(() => {
-    checkIsSelfHosted().then(setIsSelfHosted);
-    if (!starDismissed()) {
+    checkIsEmbeddedMode().then((embedded) => {
+      setEmbeddedMode(embedded);
+      if (embedded) return;
+      checkIsSelfHosted().then(setIsSelfHosted);
+      if (starDismissed()) return;
       const cachedCount = sessionStorage.getItem(STAR_CACHE_KEY);
       const cachedTs = sessionStorage.getItem(STAR_CACHE_TS_KEY);
       if (cachedCount && cachedTs && Date.now() - Number(cachedTs) < STAR_CACHE_TTL) {
@@ -79,7 +83,7 @@ const Header: Component<HeaderProps> = (props) => {
           }
         })
         .catch(() => {});
-    }
+    });
   });
 
   const dismissStar = (e: MouseEvent) => {
@@ -97,7 +101,8 @@ const Header: Component<HeaderProps> = (props) => {
   const effectiveName = () => user()?.name ?? 'User';
   const docsUrl = () => {
     const p = location.pathname;
-    if (p.includes('/guardrails') || p.includes('/limits')) return `${DOCS_BASE_URL}/observability/`;
+    if (p.includes('/guardrails') || p.includes('/limits'))
+      return `${DOCS_BASE_URL}/observability/`;
     if (p.includes('/routing')) return `${DOCS_BASE_URL}/llm-gateway/`;
     if (p.startsWith('/providers/subscriptions')) {
       return `${DOCS_BASE_URL}/providers/subscription-based-providers/`;
@@ -147,7 +152,7 @@ const Header: Component<HeaderProps> = (props) => {
           />
           <img src="/logotype-dark.svg" alt="" class="header__logo-img header__logo-img--dark" />
         </A>
-        <Show when={isSelfHosted()}>
+        <Show when={embeddedMode() === false && isSelfHosted()}>
           <span class="header__mode-badge" title="Running on the self-hosted version of Manifest">
             Self-hosted
           </span>
@@ -298,7 +303,7 @@ const Header: Component<HeaderProps> = (props) => {
           Docs
         </a>
         <NotificationBell />
-        <Show when={!starDismissed()}>
+        <Show when={embeddedMode() === false && !starDismissed()}>
           <div class="header__star-separator" />
           <div class="header__github-star">
             <a
@@ -346,75 +351,77 @@ const Header: Component<HeaderProps> = (props) => {
           </div>
           <div class="header__star-separator" />
         </Show>
-        <div class="header__user" style="position: relative;">
-          <button
-            class="header__avatar-btn"
-            onClick={() => setMenuOpen(!menuOpen())}
-            aria-label="User menu"
-            aria-haspopup="menu"
-            aria-expanded={menuOpen()}
-          >
-            <div class="header__avatar">{initials()}</div>
-          </button>
-          <Show when={menuOpen()}>
-            <div class="header__dropdown" role="menu">
-              <div class="header__dropdown-header">
-                <span class="header__dropdown-name">
-                  {effectiveName()}
-                  <Show when={isPro()}>
-                    <span class="header__pro-badge">PRO</span>
-                  </Show>
-                </span>
-                <span class="header__dropdown-email">{user()?.email ?? ''}</span>
+        <Show when={embeddedMode() === false}>
+          <div class="header__user" style="position: relative;">
+            <button
+              class="header__avatar-btn"
+              onClick={() => setMenuOpen(!menuOpen())}
+              aria-label="User menu"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen()}
+            >
+              <div class="header__avatar">{initials()}</div>
+            </button>
+            <Show when={menuOpen()}>
+              <div class="header__dropdown" role="menu">
+                <div class="header__dropdown-header">
+                  <span class="header__dropdown-name">
+                    {effectiveName()}
+                    <Show when={isPro()}>
+                      <span class="header__pro-badge">PRO</span>
+                    </Show>
+                  </span>
+                  <span class="header__dropdown-email">{user()?.email ?? ''}</span>
+                </div>
+                <div class="header__dropdown-divider" />
+                <A
+                  href="/account"
+                  class="header__dropdown-item"
+                  role="menuitem"
+                  onClick={() => setMenuOpen(false)}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                  Account Preferences
+                </A>
+                <button
+                  class="header__dropdown-item header__dropdown-item--danger"
+                  role="menuitem"
+                  onClick={handleLogout}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                    <polyline points="16 17 21 12 16 7" />
+                    <line x1="21" y1="12" x2="9" y2="12" />
+                  </svg>
+                  Log out
+                </button>
               </div>
-              <div class="header__dropdown-divider" />
-              <A
-                href="/account"
-                class="header__dropdown-item"
-                role="menuitem"
-                onClick={() => setMenuOpen(false)}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-                Account Preferences
-              </A>
-              <button
-                class="header__dropdown-item header__dropdown-item--danger"
-                role="menuitem"
-                onClick={handleLogout}
-              >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  aria-hidden="true"
-                >
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                  <polyline points="16 17 21 12 16 7" />
-                  <line x1="21" y1="12" x2="9" y2="12" />
-                </svg>
-                Log out
-              </button>
-            </div>
-          </Show>
-        </div>
+            </Show>
+          </div>
+        </Show>
       </div>
       <DuplicateAgentModal
         open={duplicateOpen()}

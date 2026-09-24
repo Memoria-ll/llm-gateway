@@ -1,5 +1,6 @@
 import { isSelfHosted } from '../common/utils/detect-self-hosted';
 import { readManifestVersion, UNKNOWN_VERSION } from '../telemetry/telemetry.config';
+import { isEmbeddedMode } from '../common/utils/manifest-mode';
 
 /**
  * The GitHub releases the Docker publish job creates for every version. They
@@ -29,7 +30,8 @@ export function buildVersionCheckConfig(env: NodeJS.ProcessEnv = process.env): V
   const isDisabled = disabled === '1' || disabled === 'true';
   const currentVersion = readManifestVersion();
   return {
-    enabled: isSelfHosted() && !isDisabled && currentVersion !== UNKNOWN_VERSION,
+    enabled:
+      isSelfHosted() && !isEmbeddedMode(env) && !isDisabled && currentVersion !== UNKNOWN_VERSION,
     currentVersion,
   };
 }

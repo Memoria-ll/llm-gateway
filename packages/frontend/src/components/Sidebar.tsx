@@ -2,7 +2,11 @@ import { A, useLocation } from '@solidjs/router';
 import { Show, createSignal, createResource, type Component } from 'solid-js';
 import { getBillingStatus } from '../services/api/billing.js';
 import { FREE_REQUEST_LIMIT_LABEL } from '../services/billing-display.js';
-import { checkIsSelfHosted, checkMcpEnabled } from '../services/setup-status.js';
+import {
+  checkIsEmbeddedMode,
+  checkIsSelfHosted,
+  checkMcpEnabled,
+} from '../services/setup-status.js';
 import AddAgentModal from './AddAgentModal.jsx';
 import AutofixAnnouncement from './AutofixAnnouncement.jsx';
 
@@ -29,6 +33,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
   // Local providers only exist on self-hosted installs — a cloud backend
   // can't reach the user's localhost, so the Local entry is hidden there.
   const [selfHosted] = createResource(checkIsSelfHosted);
+  const [embeddedMode] = createResource(checkIsEmbeddedMode);
   // An install served over plain HTTP cannot host the MCP OAuth resource, so
   // the backend runs without the endpoint entirely. The entry waits for the
   // status like the Local one does, rather than appearing and then vanishing
@@ -151,15 +156,17 @@ const Sidebar: Component<SidebarProps> = (props) => {
           <span class="sidebar__badge">New</span>
         </A>
       </Show>
-      <A
-        href="/integrations/cli"
-        class="sidebar__link"
-        classList={{ active: isGlobalActive('/integrations/cli') }}
-        aria-current={isGlobalActive('/integrations/cli') ? 'page' : undefined}
-      >
-        CLI
-        <span class="sidebar__badge">New</span>
-      </A>
+      <Show when={embeddedMode() === false}>
+        <A
+          href="/integrations/cli"
+          class="sidebar__link"
+          classList={{ active: isGlobalActive('/integrations/cli') }}
+          aria-current={isGlobalActive('/integrations/cli') ? 'page' : undefined}
+        >
+          CLI
+          <span class="sidebar__badge">New</span>
+        </A>
+      </Show>
 
       <div class="sidebar__section-label">TOOLS</div>
       <A

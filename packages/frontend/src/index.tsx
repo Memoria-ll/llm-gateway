@@ -9,6 +9,7 @@ import RootRedirect from './components/RootRedirect.jsx';
 import AgentGuard from './components/AgentGuard.jsx';
 import AuthGuard from './components/AuthGuard.jsx';
 import GuestGuard from './components/GuestGuard.jsx';
+import EmbeddedModeGuard from './components/EmbeddedModeGuard.jsx';
 import NotFound from './pages/NotFound.jsx';
 import ToastContainer from './components/ToastContainer.jsx';
 import { lazyReload, clearReloadFlag } from './services/lazy-reload.js';
@@ -60,7 +61,11 @@ const GuestLayout: ParentComponent = (props) => (
 // Post-signup discovery step (self-hosted only): authenticated, rendered as
 // its own centered two-column card outside the App shell. The page itself
 // redirects anyone who should not see it (cloud, already completed or skipped).
-const DiscoveryLayout: ParentComponent = (props) => <AuthGuard>{props.children}</AuthGuard>;
+const DiscoveryLayout: ParentComponent = (props) => (
+  <EmbeddedModeGuard>
+    <AuthGuard>{props.children}</AuthGuard>
+  </EmbeddedModeGuard>
+);
 
 // Full-page onboarding: authenticated but outside the App dashboard shell.
 // The embedded Playground step calls useRightSidebar, so the provider App
@@ -100,8 +105,22 @@ render(
           <Route path="/providers/usage-based" component={Byok} />
           <Route path="/providers/local" component={LocalProviders} />
           <Route path="/providers/connections/:connectionId" component={ConnectionDetail} />
-          <Route path="/integrations/mcp" component={McpServer} />
-          <Route path="/integrations/cli" component={Cli} />
+          <Route
+            path="/integrations/mcp"
+            component={() => (
+              <EmbeddedModeGuard>
+                <McpServer />
+              </EmbeddedModeGuard>
+            )}
+          />
+          <Route
+            path="/integrations/cli"
+            component={() => (
+              <EmbeddedModeGuard>
+                <Cli />
+              </EmbeddedModeGuard>
+            )}
+          />
           <Route path="/harnesses/:agentName" component={AgentGuard}>
             {/* Redirects: /limits → /guardrails, /messages → global /messages */}
             <Route path="/limits" component={AgentLimitsRedirect} />
@@ -143,16 +162,44 @@ render(
           />
 
           <Route path="/connect-provider" component={ConnectProvider} />
-          <Route path="/account" component={Account} />
+          <Route
+            path="/account"
+            component={() => (
+              <EmbeddedModeGuard>
+                <Account />
+              </EmbeddedModeGuard>
+            )}
+          />
         </Route>
         <Route path="/upgrade" component={AuthGuard}>
-          <Route path="/" component={Upgrade} />
+          <Route
+            path="/"
+            component={() => (
+              <EmbeddedModeGuard>
+                <Upgrade />
+              </EmbeddedModeGuard>
+            )}
+          />
         </Route>
         <Route path="/cli/auth" component={AuthGuard}>
-          <Route path="/" component={CliAuth} />
+          <Route
+            path="/"
+            component={() => (
+              <EmbeddedModeGuard>
+                <CliAuth />
+              </EmbeddedModeGuard>
+            )}
+          />
         </Route>
         <Route path="/consent" component={AuthGuard}>
-          <Route path="/" component={Consent} />
+          <Route
+            path="/"
+            component={() => (
+              <EmbeddedModeGuard>
+                <Consent />
+              </EmbeddedModeGuard>
+            )}
+          />
         </Route>
         <Route path="/oauth-error" component={AuthLayout}>
           <Route path="/" component={OauthError} />
@@ -163,13 +210,27 @@ render(
           <Route path="/reset-password" component={ResetPassword} />
         </Route>
         <Route path="/setup" component={AuthLayout}>
-          <Route path="/" component={Setup} />
+          <Route
+            path="/"
+            component={() => (
+              <EmbeddedModeGuard>
+                <Setup />
+              </EmbeddedModeGuard>
+            )}
+          />
         </Route>
         <Route path="/discovery" component={DiscoveryLayout}>
           <Route path="/" component={Discovery} />
         </Route>
         <Route path="/welcome" component={WelcomeLayout}>
-          <Route path="/" component={Welcome} />
+          <Route
+            path="/"
+            component={() => (
+              <EmbeddedModeGuard>
+                <Welcome />
+              </EmbeddedModeGuard>
+            )}
+          />
         </Route>
         <Route path="*404" component={NotFound} />
       </Router>

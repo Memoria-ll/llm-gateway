@@ -108,6 +108,9 @@ export interface McpAvailability {
  * crash and never get a chance to set a variable first.
  */
 export function resolveMcpAvailability(env: NodeJS.ProcessEnv = process.env): McpAvailability {
+  if (env['MANIFEST_MODE']?.trim().toLowerCase() === 'embedded') {
+    return { enabled: false, reason: 'disabled in Embedded Manifest' };
+  }
   const flag = env['MCP_ENABLED'];
   if (flag && FALSEY.has(flag.trim().toLowerCase())) {
     return { enabled: false, reason: 'disabled by MCP_ENABLED' };
