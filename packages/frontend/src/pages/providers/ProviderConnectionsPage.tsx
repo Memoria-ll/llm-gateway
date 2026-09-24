@@ -11,6 +11,7 @@ import {
 } from 'solid-js';
 import {
   getAgents,
+  createAgent,
   getCustomProviders,
   getProviders as getAgentProviders,
 } from '../../services/api.js';
@@ -57,6 +58,8 @@ interface ProviderConnectionsPageProps {
 interface AgentRow {
   agent_name: string;
 }
+
+const FIRST_CONNECTION_AGENT_NAME = 'my-agent';
 
 const PAGE_COPY: Record<
   ProviderPageKind,
@@ -347,7 +350,7 @@ const ProviderConnectionsPage: Component<ProviderConnectionsPageProps> = (props)
     model_counts: config()?.model_counts ?? {},
   });
 
-  const [agents] = createResource(async () => {
+  const [agents, { mutate: mutateAgents, refetch: refetchAgents }] = createResource(async () => {
     try {
       const result = (await getAgents()) as { agents?: AgentRow[] } | AgentRow[];
       return Array.isArray(result) ? result : (result.agents ?? []);
@@ -357,6 +360,37 @@ const ProviderConnectionsPage: Component<ProviderConnectionsPageProps> = (props)
   });
 
   const firstAgentName = () => agents()?.[0]?.agent_name ?? '';
+  const [creatingFirstAgent, setCreatingFirstAgent] = createSignal(false);
+  let firstAgentCreation: Promise<string | null> | null = null;
+
+  // Provider connections are tenant-level, but the existing connection forms
+  // use an agent route to create them. A fresh local install has no agent yet,
+  // so create the first one on demand instead of leaving every Connect button
+  // disabled. This also bootstraps the local tenant without asking for a login.
+  const ensureFirstAgent = async (): Promise<string | null> => {
+    const current = firstAgentName();
+    if (current) return current;
+    if (firstAgentCreation) return firstAgentCreation;
+
+    setCreatingFirstAgent(true);
+    const creation = (async () => {
+      try {
+        const result = await createAgent({ name: FIRST_CONNECTION_AGENT_NAME });
+        const name = result.agent.name;
+        mutateAgents([...(agents() ?? []), { agent_name: name }]);
+        await refetchAgents();
+        return name;
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Could not create a harness');
+        return null;
+      } finally {
+        setCreatingFirstAgent(false);
+        firstAgentCreation = null;
+      }
+    })();
+    firstAgentCreation = creation;
+    return creation;
+  };
 
   const [modalProviders, { refetch: refetchModalProviders }] = createResource(
     () => firstAgentName(),
@@ -485,13 +519,16 @@ const ProviderConnectionsPage: Component<ProviderConnectionsPageProps> = (props)
     return `${count} active ${count === 1 ? copy().activeSingular : copy().activePlural}`;
   };
 
-  const openModal = (providerId?: string) => {
+  const openModal = async (providerId?: string) => {
     setCustomProviderPrefill(null);
     // Deep-link with the page's auth type so the connection form opens in the
     // matching mode (e.g. the Subscriptions page opens the OAuth/subscription
     // flow rather than the API-key form for providers that support both).
     setDeepLink(providerId ? { providerId, authType: copy().authType } : null);
+    const agentName = await ensureFirstAgent();
+    if (!agentName) return;
     void refetchModalProviders();
+    void refetchCustomProviders();
     setShowModal(true);
   };
 
@@ -508,7 +545,8 @@ const ProviderConnectionsPage: Component<ProviderConnectionsPageProps> = (props)
     }
   });
 
-  const openCustomProvider = () => {
+  const openCustomProvider = async () => {
+    if (!(await ensureFirstAgent())) return;
     setShowCustomModal(true);
   };
 
@@ -544,7 +582,8 @@ const ProviderConnectionsPage: Component<ProviderConnectionsPageProps> = (props)
         <Show when={copy().customAddLabel}>
           <button
             class="btn btn--outline btn--sm"
-            onClick={() => openCustomProvider()}
+            disabled={creatingFirstAgent()}
+            onClick={() => void openCustomProvider()}
             style="display: inline-flex; align-items: center; gap: 6px;"
           >
             <svg
@@ -557,7 +596,7 @@ const ProviderConnectionsPage: Component<ProviderConnectionsPageProps> = (props)
             >
               <path d="M7 11h10c.37 0 .72-.21.89-.54s.14-.73-.08-1.04l-5-7c-.38-.53-1.25-.53-1.63 0l-5 7A.997.997 0 0 0 6.99 11Zm5-6.28L15.06 9H8.95l3.06-4.28ZM17.5 13c-2.48 0-4.5 2.02-4.5 4.5s2.02 4.5 4.5 4.5 4.5-2.02 4.5-4.5-2.02-4.5-4.5-4.5m0 7a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5M3 22h7c.55 0 1-.45 1-1v-7c0-.55-.45-1-1-1H3c-.55 0-1 .45-1 1v7c0 .55.45 1 1 1m1-7h5v5H4z" />
             </svg>
-            {copy().customAddLabel}
+            {creatingFirstAgent() ? 'Setting up…' : copy().customAddLabel}
           </button>
         </Show>
       </div>
@@ -946,11 +985,11 @@ const ProviderConnectionsPage: Component<ProviderConnectionsPageProps> = (props)
                           </Show>
                           <button
                             class="btn btn--outline btn--sm"
-                            disabled={!firstAgentName()}
+                            disabled={creatingFirstAgent()}
                             style="white-space: nowrap;"
-                            onClick={() => openModal(provider.id)}
+                            onClick={() => void openModal(provider.id)}
                           >
-                            {copy().addLabel}
+                            {creatingFirstAgent() ? 'Setting up…' : copy().addLabel}
                           </button>
                         </span>
                       </td>
@@ -998,11 +1037,11 @@ const ProviderConnectionsPage: Component<ProviderConnectionsPageProps> = (props)
                     </Show>
                     <button
                       class="btn btn--outline btn--sm"
-                      disabled={!firstAgentName()}
+                      disabled={creatingFirstAgent()}
                       style="font-size: var(--font-size-xs); white-space: nowrap;"
-                      onClick={() => openModal(provider.id)}
+                      onClick={() => void openModal(provider.id)}
                     >
-                      {copy().addLabel}
+                      {creatingFirstAgent() ? 'Setting up…' : copy().addLabel}
                     </button>
                   </div>
                 </div>
