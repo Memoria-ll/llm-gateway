@@ -767,4 +767,131 @@ describe('OpenaiOauthService', () => {
       expect(res.end).toHaveBeenCalledWith(expect.stringContaining('manifest-oauth-success'));
     });
   });
+
+  describe('callback server in embedded mode', () => {
+    // Embedded Manifest runs with NODE_ENV=production on the user's own PC,
+    // so the loopback server must run there even though other production
+    // deployments skip it.
+    const originalMode = process.env['MANIFEST_MODE'];
+    let embeddedService: OpenaiOauthService;
+
+    // Emits the listen error on a later tick, as a real net.Server does.
+    function serverFailingWith(code: string) {
+      let onError: ((err: NodeJS.ErrnoException) => void) | undefined;
+      return {
+        listen: jest.fn(() => {
+          const err = new Error(`listen ${code}`) as NodeJS.ErrnoException;
+          err.code = code;
+          process.nextTick(() => onError?.(err));
+        }),
+        close: jest.fn(),
+        on: jest.fn((_event: string, handler: (err: NodeJS.ErrnoException) => void) => {
+          onError = handler;
+        }),
+        unref: jest.fn(),
+      };
+    }
+
+    function mockTokenResponse(): void {
+      fetchMock.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ access_token: 'tok', refresh_token: 'ref', expires_in: 3600 }),
+      });
+    }
+
+    beforeEach(() => {
+      process.env['MANIFEST_MODE'] = 'embedded';
+      const prodConfig = {
+        get: jest.fn((key: string) => (key === 'app.nodeEnv' ? 'production' : undefined)),
+      } as unknown as jest.Mocked<ConfigService>;
+      embeddedService = new OpenaiOauthService(
+        providerService,
+        prodConfig,
+        discoveryService as never,
+      );
+      createServerMock.mockClear();
+    });
+
+    afterEach(() => {
+      if (originalMode === undefined) delete process.env['MANIFEST_MODE'];
+      else process.env['MANIFEST_MODE'] = originalMode;
+    });
+
+    it('starts the callback server on 127.0.0.1 despite NODE_ENV=production', async () => {
+      await embeddedService.generateAuthorizationUrl(
+        'agent-1',
+        'tenant-1',
+        'http://localhost:2199',
+      );
+
+      expect(createServerMock).toHaveBeenCalledTimes(1);
+      const server = createServerMock.mock.results[0].value;
+      expect(server.listen).toHaveBeenCalledWith(1455, '127.0.0.1', expect.any(Function));
+    });
+
+    it('redirects the popup to the dashboard done page after the exchange', async () => {
+      const url = await embeddedService.generateAuthorizationUrl(
+        'agent-1',
+        'tenant-1',
+        'http://localhost:2199',
+      );
+      const state = new URL(url).searchParams.get('state')!;
+      expect(createServerMock).toHaveBeenCalledTimes(1);
+      const requestHandler = createServerMock.mock.calls[0][0] as (
+        req: unknown,
+        res: unknown,
+      ) => void;
+      mockTokenResponse();
+
+      const res = { writeHead: jest.fn(), end: jest.fn() };
+      requestHandler({ url: `/auth/callback?code=the-code&state=${state}` }, res);
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(res.writeHead).toHaveBeenCalledWith(302, {
+        Location: 'http://localhost:2199/api/v1/oauth/openai/done?ok=1',
+      });
+    });
+
+    it('returns the authorize URL when the port is in use, leaving the paste flow to finish', async () => {
+      createServerMock.mockReturnValueOnce(serverFailingWith('EADDRINUSE'));
+
+      const url = await embeddedService.generateAuthorizationUrl(
+        'agent-1',
+        'tenant-1',
+        'http://localhost:2199',
+      );
+
+      expect(createServerMock).toHaveBeenCalledTimes(1);
+      expect(url).toContain('https://auth.openai.com/oauth/authorize');
+      const state = new URL(url).searchParams.get('state')!;
+      mockTokenResponse();
+      await embeddedService.exchangeCode(state, 'pasted-code');
+      expect(providerService.upsertProvider).toHaveBeenCalledWith(
+        'agent-1',
+        'tenant-1',
+        'openai',
+        expect.any(String),
+        'subscription',
+        undefined,
+        undefined,
+        null,
+      );
+    });
+
+    it('falls back on other listen errors too, and retries the server on the next authorize', async () => {
+      // Windows answers EACCES for ports inside an excluded port range.
+      createServerMock.mockReturnValueOnce(serverFailingWith('EACCES'));
+
+      await expect(
+        embeddedService.generateAuthorizationUrl('agent-1', 'tenant-1', 'http://localhost:2199'),
+      ).resolves.toContain('https://auth.openai.com/oauth/authorize');
+
+      await embeddedService.generateAuthorizationUrl(
+        'agent-1',
+        'tenant-1',
+        'http://localhost:2199',
+      );
+      expect(createServerMock).toHaveBeenCalledTimes(2);
+    });
+  });
 });

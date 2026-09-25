@@ -16,6 +16,7 @@ import { createServer, IncomingMessage, ServerResponse, Server } from 'http';
 import { ProviderService } from '../../routing-core/provider.service';
 import { ModelDiscoveryService } from '../../../model-discovery/model-discovery.service';
 import { scrubSecrets } from '../../../common/utils/secret-scrub';
+import { isEmbeddedMode } from '../../../common/utils/manifest-mode';
 import { generatePkce, generateState } from './pkce';
 import { oauthDoneHtml } from './callback-page';
 import { PendingStore } from './pending-store';
@@ -47,7 +48,7 @@ export interface RedirectPkceOauthConfig {
   readonly revokeUrl?: string;
   /** Scope string sent in the authorize request. */
   readonly scope: string;
-  /** Loopback port the dev callback server binds. */
+  /** Loopback port the callback server binds (development and embedded mode). */
   readonly callbackPort: number;
   /**
    * Extra params merged into the authorize URL. Useful for provider quirks
@@ -110,6 +111,7 @@ export abstract class RedirectPkceOauthBaseService {
   protected readonly clientSecret: string | undefined;
   protected readonly redirectUri: string;
   private readonly useCallbackServer: boolean;
+  private readonly embeddedMode: boolean;
 
   constructor(
     protected readonly providerService: ProviderService,
@@ -130,11 +132,15 @@ export abstract class RedirectPkceOauthBaseService {
       : oauthConfig.defaultClientSecret;
     this.redirectUri =
       oauthConfig.redirectUri ?? `http://localhost:${oauthConfig.callbackPort}/auth/callback`;
-    // Loopback callback server runs only in development. Production
-    // deployments (Docker self-hosted and cloud) complete the OAuth flow
-    // through the server's public URL instead.
+    // Loopback callback server runs in development and in embedded mode.
+    // Other production deployments (Docker self-hosted and cloud) complete the
+    // OAuth flow through the paste fallback (`POST …/callback`) instead, since
+    // the user's browser is not on the machine the server runs on. Embedded
+    // Manifest runs on the user's own PC, so the redirect to loopback lands.
+    this.embeddedMode = isEmbeddedMode();
     this.useCallbackServer =
-      (configService.get<string>('app.nodeEnv') ?? 'development') !== 'production';
+      (configService.get<string>('app.nodeEnv') ?? 'development') !== 'production' ||
+      this.embeddedMode;
   }
 
   async generateAuthorizationUrl(
@@ -157,7 +163,15 @@ export abstract class RedirectPkceOauthBaseService {
       backendUrl: safeBackendUrl,
     });
     if (this.useCallbackServer) {
-      await this.ensureCallbackServer();
+      try {
+        await this.ensureCallbackServer();
+      } catch (err) {
+        // Embedded: the paste fallback still completes the login, so a port
+        // another process holds (`codex login` also binds 1455) or one Windows
+        // reserves must not fail the authorize request.
+        if (!this.embeddedMode) throw err;
+        this.logger.warn('Continuing without the OAuth callback server; use the paste fallback');
+      }
     }
     const params = new URLSearchParams({
       client_id: this.clientId,
