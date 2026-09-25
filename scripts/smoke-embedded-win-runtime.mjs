@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer } from 'node:net';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -43,7 +43,7 @@ try {
     PGUSER: 'manifest',
   };
   run(path.join(bin, 'initdb.exe'), ['-D', data, '-U', 'manifest', '--auth-local=trust', '--auth-host=trust', '--encoding=UTF8'], env, 180_000);
-  run(path.join(bin, 'pg_ctl.exe'), ['-D', data, '-o', `-h 127.0.0.1 -p ${databasePort}`, '-w', '-t', '45', '-l', log, 'start'], env, 60_000);
+  run(path.join(bin, 'pg_ctl.exe'), ['-D', data, '-o', `-h 127.0.0.1 -p ${databasePort}`, '-w', '-t', '90', '-l', log, 'start'], env, 110_000);
   postgresStarted = true;
   run(path.join(bin, 'createdb.exe'), ['manifest'], env, 30_000);
   const backendEnv = {
@@ -85,7 +85,9 @@ try {
   if (!healthy) throw new Error(`Embedded backend did not become healthy. ${backendError?.message || stderr}`);
   console.log('Embedded Windows runtime: PostgreSQL and Manifest health check passed.');
 } catch (error) {
-  if (postgresStarted) console.error((await readFile(log, 'utf8').catch(() => '')).slice(-8_000));
+  console.error('Embedded runtime smoke test failed:', error);
+  const postgresLog = await readFile(log, 'utf8').catch(() => '');
+  if (postgresLog) console.error(postgresLog.slice(-8_000));
   throw error;
 } finally {
   if (server && server.exitCode === null && server.signalCode === null) {
@@ -95,10 +97,11 @@ try {
       new Promise((resolve) => setTimeout(resolve, 10_000)),
     ]);
   }
-  if (postgresStarted) {
+  if (postgresStarted || await access(path.join(data, 'PG_VERSION')).then(() => true, () => false)) {
     try { run(path.join(bin, 'pg_ctl.exe'), ['-D', data, '-m', 'immediate', '-w', '-t', '30', 'stop'], {
       ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH || ''}`,
     }, 45_000); } catch (error) { console.error(error); }
   }
-  await rm(directory, { recursive: true, force: true });
+  try { await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }); }
+  catch (error) { console.error('Could not remove temporary smoke-test data:', error); }
 }
