@@ -30,3 +30,19 @@ Do not download an upstream source tree and patch it during packaging. Include t
 root `LICENSE` in installers and ZIP archives, and preserve third-party `LICENSE`,
 `COPYING`, and `NOTICE` files from runtime dependencies. The Docker image built from
 this fork includes the root license and keeps those dependency notices.
+
+## Windows runtime release for Zeta Plot Supporter
+
+The `Embedded Windows runtime` workflow builds the embedded runtime on Windows
+when relevant files reach `main`, and can also be run manually. It packages the
+frontend, backend, production dependencies, Node.js 24.21.0, and PostgreSQL
+16.15-1 into `native-runtime-win-x64.zip`. The workflow starts the bundled
+PostgreSQL and Manifest backend, checks the health endpoint, writes a SHA-256
+companion file, and publishes both as
+assets of the pre-release `embedded-win-<full commit SHA>`. The tag is separate
+from Manifest's normal version releases and is not marked as the latest release.
+
+Zeta Plot Supporter pins the full Manifest commit, release tag, and ZIP SHA-256 in
+`manifest-runtime.lock.json`. Its Windows build verifies the Release asset digest,
+the companion checksum, and `runtime-info.json` before using the runtime. Keep
+published assets and their tag unchanged so older app commits remain rebuildable.

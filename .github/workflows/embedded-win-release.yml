@@ -1,0 +1,93 @@
+name: Embedded Windows runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/embedded-win-release.yml'
+      - 'scripts/build-embedded-win-runtime.mjs'
+      - 'scripts/embedded-runtime-download-cache.mjs'
+      - 'scripts/smoke-embedded-win-runtime.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'packages/backend/**'
+      - 'packages/frontend/**'
+      - 'packages/shared/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: embedded-win-${{ github.sha }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.21.0
+      - name: Build embedded runtime
+        shell: pwsh
+        run: node scripts/build-embedded-win-runtime.mjs
+      - name: Verify and archive runtime
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = 'artifacts/embedded-win-runtime/native-runtime'
+          $node = Join-Path $root 'node/node.exe'
+          $backend = Join-Path $root 'manifest/packages/backend/dist/main.js'
+          $frontend = Join-Path $root 'manifest/packages/frontend/dist/index.html'
+          $postgres = Join-Path $root 'postgres/pgsql/bin/postgres.exe'
+          foreach ($file in @($node, $backend, $frontend, $postgres, (Join-Path $root 'runtime-info.json'))) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing runtime file: $file" }
+          }
+          $info = Get-Content (Join-Path $root 'runtime-info.json') -Raw | ConvertFrom-Json
+          if ($info.manifestCommit -ne $env:GITHUB_SHA) { throw 'Runtime commit does not match this workflow.' }
+          & $node --version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled Node.js failed.' }
+          & $postgres --version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled PostgreSQL failed.' }
+          $manifest = (Resolve-Path (Join-Path $root 'manifest')).Path
+          & $node -e "for (const name of ['@nestjs/core', 'typeorm', 'pg']) require.resolve(name, { paths: [process.argv[1]] })" $manifest
+          if ($LASTEXITCODE -ne 0) { throw 'Manifest production dependencies are incomplete.' }
+          & $node scripts/smoke-embedded-win-runtime.mjs $root
+          if ($LASTEXITCODE -ne 0) { throw 'Embedded Windows runtime smoke test failed.' }
+          $archive = 'artifacts/native-runtime-win-x64.zip'
+          & tar.exe -a -c -f $archive -C 'artifacts/embedded-win-runtime' native-runtime
+          if ($LASTEXITCODE -ne 0) { throw 'Could not archive runtime.' }
+          $hash = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText("$archive.sha256", "$hash  native-runtime-win-x64.zip`n")
+      - name: Publish versioned asset
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "embedded-win-$env:GITHUB_SHA"
+          $archive = 'artifacts/native-runtime-win-x64.zip'
+          $checksum = "$archive.sha256"
+          $previousPreference = $ErrorActionPreference
+          $ErrorActionPreference = 'Continue'
+          try {
+            $existingJson = & gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$tag" 2>$null
+            $exists = $LASTEXITCODE -eq 0
+          } finally { $ErrorActionPreference = $previousPreference }
+          if ($exists) {
+            $existing = ($existingJson -join "`n") | ConvertFrom-Json
+            foreach ($file in @($archive, $checksum)) {
+              $name = Split-Path $file -Leaf
+              $expected = 'sha256:' + (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
+              $asset = $existing.assets | Where-Object name -EQ $name | Select-Object -First 1
+              if (-not $asset -or $asset.digest -ne $expected) { throw "Existing Release asset differs: $name" }
+            }
+            Write-Host "Release $tag already has the expected assets."
+            exit 0
+          }
+          & gh release create $tag $archive $checksum --target $env:GITHUB_SHA --title "Embedded Windows runtime $($env:GITHUB_SHA.Substring(0, 12))" --notes "Windows x64 embedded runtime built from Manifest commit $env:GITHUB_SHA." --prerelease --latest=false
+          if ($LASTEXITCODE -ne 0) { throw 'Could not publish embedded Windows runtime.' }
