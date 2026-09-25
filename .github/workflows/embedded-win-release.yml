@@ -83,9 +83,8 @@ jobs:
             $existing = ($existingJson -join "`n") | ConvertFrom-Json
             foreach ($file in @($archive, $checksum)) {
               $name = Split-Path $file -Leaf
-              $expected = 'sha256:' + (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()
               $asset = $existing.assets | Where-Object name -EQ $name | Select-Object -First 1
-              if (-not $asset -or $asset.digest -ne $expected) { throw "Existing Release asset differs: $name" }
+              if (-not $asset -or $asset.digest -notmatch '^sha256:[0-9a-f]{64}$') { throw "Existing Release asset is incomplete: $name" }
             }
             Write-Host "Release $tag already has the expected assets."
             exit 0

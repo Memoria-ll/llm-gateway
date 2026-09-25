@@ -24,8 +24,11 @@ async function freePort() {
   return port;
 }
 
-function run(file, args, env, timeout = 120_000) {
-  const result = spawnSync(file, args, { cwd: bin, env, encoding: 'utf8', timeout, windowsHide: true });
+function run(file, args, env, timeout = 120_000, capture = true) {
+  const result = spawnSync(file, args, {
+    cwd: bin, env, encoding: 'utf8', timeout, windowsHide: true,
+    stdio: capture ? 'pipe' : 'ignore',
+  });
   if (result.error || result.status !== 0) {
     throw new Error(`${path.basename(file)} failed: ${result.error?.message || result.stderr || result.stdout || result.status}`);
   }
@@ -43,7 +46,7 @@ try {
     PGUSER: 'manifest',
   };
   run(path.join(bin, 'initdb.exe'), ['-D', data, '-U', 'manifest', '--auth-local=trust', '--auth-host=trust', '--encoding=UTF8'], env, 180_000);
-  run(path.join(bin, 'pg_ctl.exe'), ['-D', data, '-o', `-h 127.0.0.1 -p ${databasePort}`, '-w', '-t', '90', '-l', log, 'start'], env, 110_000);
+  run(path.join(bin, 'pg_ctl.exe'), ['-D', data, '-o', `-h 127.0.0.1 -p ${databasePort}`, '-w', '-t', '45', '-l', log, 'start'], env, 60_000, false);
   postgresStarted = true;
   run(path.join(bin, 'createdb.exe'), ['manifest'], env, 30_000);
   const backendEnv = {
@@ -100,7 +103,7 @@ try {
   if (postgresStarted || await access(path.join(data, 'PG_VERSION')).then(() => true, () => false)) {
     try { run(path.join(bin, 'pg_ctl.exe'), ['-D', data, '-m', 'immediate', '-w', '-t', '30', 'stop'], {
       ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH || ''}`,
-    }, 45_000); } catch (error) { console.error(error); }
+    }, 45_000, false); } catch (error) { console.error(error); }
   }
   try { await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 500 }); }
   catch (error) { console.error('Could not remove temporary smoke-test data:', error); }
