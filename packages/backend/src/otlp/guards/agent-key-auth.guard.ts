@@ -13,6 +13,7 @@ import { Repository } from 'typeorm';
 import { createHash } from 'crypto';
 import { Request } from 'express';
 import { AgentApiKey } from '../../entities/agent-api-key.entity';
+import { Agent } from '../../entities/agent.entity';
 import {
   IngestionContext,
   RequestWithManifestErrorContext,
@@ -20,6 +21,8 @@ import {
 import { verifyKey, keyPrefix as computePrefix } from '../../common/utils/hash.util';
 import { API_KEY_PREFIX } from '../../common/constants/api-key.constants';
 import { isLoopbackPeer } from '../../common/utils/local-ip';
+import { isEmbeddedMode } from '../../common/utils/manifest-mode';
+import { EMBEDDED_USER_ID } from '../../auth/embedded-identity';
 const MIN_TOKEN_LENGTH = 12;
 
 function cacheKey(token: string): string {
@@ -124,7 +127,11 @@ export class AgentKeyAuthGuard implements CanActivate, OnModuleInit, OnModuleDes
       this.configService.get<string>('app.nodeEnv') === 'development' && isLoopbackPeer(request);
 
     if (!authHeader) {
-      if (await this.handleDevLoopback(request, isDevLoopback)) return true;
+      if (isEmbeddedMode() && isLoopbackPeer(request)) {
+        if (await this.handleEmbeddedLoopback(request)) return true;
+      } else if (await this.handleDevLoopback(request, isDevLoopback)) {
+        return true;
+      }
       this.logger.warn(`Request without auth from ${request.ip}`);
       throw new UnauthorizedException('Authorization header required');
     }
@@ -170,6 +177,37 @@ export class AgentKeyAuthGuard implements CanActivate, OnModuleInit, OnModuleDes
     const devCtx = await this.resolveDevContext();
     if (!devCtx) return false;
     this.setContext(request, devCtx);
+    return true;
+  }
+
+  /**
+   * Embedded mode serves one local user, so a desktop app on the same machine
+   * may call the proxy without an agent key. The request is attributed to the
+   * oldest live harness of the embedded identity's tenant — the same tenant the
+   * dashboard's SessionGuard resolves, so usage and provider settings agree.
+   * The boot seeder creates one when the tenant has none. Not cached, so a
+   * deleted or renamed harness takes effect on the next request.
+   */
+  private async handleEmbeddedLoopback(request: Request): Promise<boolean> {
+    const agent = await this.keyRepo.manager
+      .createQueryBuilder(Agent, 'a')
+      .innerJoin('a.tenant', 't')
+      .where('t.owner_user_id = :ownerUserId', { ownerUserId: EMBEDDED_USER_ID })
+      .andWhere('a.deleted_at IS NULL')
+      .andWhere('a.is_playground = false')
+      .orderBy('a.created_at', 'ASC')
+      .addOrderBy('a.id', 'ASC')
+      .getOne();
+    if (!agent) {
+      this.logger.warn('Embedded request without auth, but the local tenant has no harness');
+      return false;
+    }
+    this.setContext(request, {
+      tenantId: agent.tenant_id,
+      agentId: agent.id,
+      agentName: agent.name,
+      userId: EMBEDDED_USER_ID,
+    });
     return true;
   }
 

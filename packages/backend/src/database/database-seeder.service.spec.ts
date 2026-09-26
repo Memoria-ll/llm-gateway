@@ -601,4 +601,101 @@ describe('DatabaseSeederService', () => {
       );
     });
   });
+
+  describe('embedded mode', () => {
+    const ORIGINAL_MODE = process.env['MANIFEST_MODE'];
+    let managerAgentInsert: jest.Mock;
+    let managerKeyInsert: jest.Mock;
+    let managerQuery: jest.Mock;
+    let transaction: jest.Mock;
+
+    beforeEach(() => {
+      process.env['MANIFEST_MODE'] = 'embedded';
+      managerAgentInsert = jest.fn().mockResolvedValue({});
+      managerKeyInsert = jest.fn().mockResolvedValue({});
+      managerQuery = jest.fn().mockResolvedValue([]);
+      const manager = {
+        getRepository: jest.fn((entity: { name: string }) => ({
+          insert: entity.name === 'Agent' ? managerAgentInsert : managerKeyInsert,
+        })),
+        query: managerQuery,
+      };
+      transaction = jest.fn(async (work: (m: typeof manager) => Promise<void>) => work(manager));
+      (mockDataSource as unknown as { transaction: jest.Mock }).transaction = transaction;
+      mockDataSource.query.mockResolvedValue([]);
+    });
+
+    afterEach(() => {
+      if (ORIGINAL_MODE === undefined) delete process.env['MANIFEST_MODE'];
+      else process.env['MANIFEST_MODE'] = ORIGINAL_MODE;
+    });
+
+    it('creates the embedded tenant and a harness with a key and every provider enabled', async () => {
+      mockTenantRepo.findOne
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: 'embedded-tenant' });
+      mockAgentRepo.count.mockResolvedValue(0);
+
+      await service.onModuleInit();
+
+      expect(mockTenantRepo.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          owner_user_id: 'manifest-embedded-local-user',
+          is_active: true,
+        }),
+      );
+      expect(managerAgentInsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'my-agent',
+          display_name: 'my-agent',
+          tenant_id: 'embedded-tenant',
+        }),
+      );
+      const agentId = managerAgentInsert.mock.calls[0][0].id;
+      const keyRow = managerKeyInsert.mock.calls[0][0];
+      expect(keyRow).toMatchObject({
+        tenant_id: 'embedded-tenant',
+        agent_id: agentId,
+        is_active: true,
+      });
+      expect(keyRow.key_prefix).toMatch(/^mnfst_/);
+      expect(keyRow.key).toEqual(expect.any(String));
+      expect(managerQuery).toHaveBeenCalledWith(
+        expect.stringContaining('INSERT INTO "agent_enabled_providers"'),
+        [agentId, 'embedded-tenant'],
+      );
+      // Embedded boot never falls through to the dev demo seed.
+      expect(auth.api.signUpEmail).not.toHaveBeenCalled();
+    });
+
+    it('reuses an existing embedded tenant', async () => {
+      mockTenantRepo.findOne.mockResolvedValue({ id: 'embedded-tenant' });
+      mockAgentRepo.count.mockResolvedValue(0);
+
+      await service.onModuleInit();
+
+      expect(mockTenantRepo.insert).not.toHaveBeenCalled();
+      expect(managerAgentInsert).toHaveBeenCalledWith(
+        expect.objectContaining({ tenant_id: 'embedded-tenant' }),
+      );
+    });
+
+    it('leaves the tenant alone when it already has a live harness', async () => {
+      mockTenantRepo.findOne.mockResolvedValue({ id: 'embedded-tenant' });
+      mockAgentRepo.count.mockResolvedValue(1);
+
+      await service.onModuleInit();
+
+      expect(mockAgentRepo.count).toHaveBeenCalledWith({
+        where: expect.objectContaining({ tenant_id: 'embedded-tenant', is_playground: false }),
+      });
+      expect(transaction).not.toHaveBeenCalled();
+    });
+
+    it('fails boot when the embedded tenant cannot be read back after insert', async () => {
+      mockTenantRepo.findOne.mockResolvedValue(null);
+
+      await expect(service.onModuleInit()).rejects.toThrow('Embedded tenant was not created');
+    });
+  });
 });

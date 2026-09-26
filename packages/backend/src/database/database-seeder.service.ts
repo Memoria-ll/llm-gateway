@@ -1,7 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
+import { randomBytes, randomUUID } from 'crypto';
 import { auth } from '../auth/auth.instance';
 import { Tenant } from '../entities/tenant.entity';
 import { Agent } from '../entities/agent.entity';
@@ -14,6 +15,8 @@ import { AgentEnabledProvider } from '../entities/agent-enabled-provider.entity'
 import { TierAssignment } from '../entities/tier-assignment.entity';
 import { SpecificityAssignment } from '../entities/specificity-assignment.entity';
 import { hashKey, keyPrefix } from '../common/utils/hash.util';
+import { encrypt, getEncryptionSecret } from '../common/utils/crypto.util';
+import { API_KEY_PREFIX } from '../common/constants/api-key.constants';
 import { RequestRecordingStorageService } from '../common/services/request-recording-storage.service';
 import { encodeRequestRecording } from '../common/utils/request-recording-codec';
 import type { StoredAttemptRecording } from '../routing/proxy/attempt-recording.types';
@@ -25,6 +28,10 @@ import {
   EMBEDDED_USER_ID,
   EMBEDDED_USER_NAME,
 } from '../auth/embedded-identity';
+
+// Same name the dashboard's provider pages create on a fresh install
+// (FIRST_CONNECTION_AGENT_NAME in ProviderConnectionsPage.tsx).
+const EMBEDDED_AGENT_NAME = 'my-agent';
 
 const SEED_API_KEY = 'dev-api-key-manifest-001';
 const SEED_OTLP_KEY = 'mnfst_dev-otlp-key-001';
@@ -146,6 +153,7 @@ export class DatabaseSeederService implements OnModuleInit {
 
     if (isEmbeddedMode()) {
       await this.ensureEmbeddedIdentity();
+      await this.ensureEmbeddedHarness();
       return;
     }
 
@@ -209,6 +217,63 @@ export class DatabaseSeederService implements OnModuleInit {
       [EMBEDDED_USER_ID, EMBEDDED_USER_NAME, EMBEDDED_USER_EMAIL],
     );
     this.logger.log('Initialized the local Embedded Manifest identity.');
+  }
+
+  /**
+   * Keyless proxy requests in embedded mode are attributed to a harness of the
+   * embedded identity's tenant (AgentKeyAuthGuard.handleEmbeddedLoopback), so a
+   * fresh data directory needs one before the first request arrives. Created at
+   * boot rather than on the first request so no dashboard cache has captured
+   * the empty state yet.
+   */
+  private async ensureEmbeddedHarness(): Promise<void> {
+    let tenant = await this.tenantRepo.findOne({ where: { owner_user_id: EMBEDDED_USER_ID } });
+    if (!tenant) {
+      await this.tenantRepo.insert({
+        id: randomUUID(),
+        name: EMBEDDED_USER_ID,
+        owner_user_id: EMBEDDED_USER_ID,
+        is_active: true,
+      });
+      tenant = await this.tenantRepo.findOne({ where: { owner_user_id: EMBEDDED_USER_ID } });
+      if (!tenant) throw new Error('Embedded tenant was not created');
+    }
+    const tenantId = tenant.id;
+
+    const liveAgents = await this.agentRepo.count({
+      where: { tenant_id: tenantId, deleted_at: IsNull(), is_playground: false },
+    });
+    if (liveAgents > 0) return;
+
+    const agentId = randomUUID();
+    const rawKey = API_KEY_PREFIX + randomBytes(32).toString('base64url');
+    // Same rows POST /api/v1/agents writes: the agent, its ingest key (so the
+    // dashboard can reveal it), and every connected provider enabled.
+    await this.dataSource.transaction(async (manager) => {
+      await manager.getRepository(Agent).insert({
+        id: agentId,
+        name: EMBEDDED_AGENT_NAME,
+        display_name: EMBEDDED_AGENT_NAME,
+        is_active: true,
+        tenant_id: tenantId,
+      });
+      await manager.getRepository(AgentApiKey).insert({
+        id: randomUUID(),
+        key: encrypt(rawKey, getEncryptionSecret()),
+        key_hash: hashKey(rawKey),
+        key_prefix: keyPrefix(rawKey),
+        label: `${EMBEDDED_AGENT_NAME} ingest key`,
+        tenant_id: tenantId,
+        agent_id: agentId,
+        is_active: true,
+      });
+      await manager.query(
+        `INSERT INTO "agent_enabled_providers" ("agent_id","tenant_provider_id") ` +
+          `SELECT $1, "id" FROM "tenant_providers" WHERE "tenant_id" = $2 ON CONFLICT DO NOTHING`,
+        [agentId, tenantId],
+      );
+    });
+    this.logger.log(`Created the local Embedded harness "${EMBEDDED_AGENT_NAME}".`);
   }
 
   private async seedAdminUser() {
