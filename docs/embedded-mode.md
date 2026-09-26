@@ -18,6 +18,16 @@ Manifest telemetry, and update checks are disabled. Startup refreshes for third-
 model and pricing catalogs are also skipped. Provider OAuth and API-key flows remain
 available when the user starts them.
 
+The LLM proxy (`/v1/*`) also accepts requests without an `Authorization` header when
+they come from a loopback TCP peer (`socket.remoteAddress`, not the spoofable
+`X-Forwarded-For`). Such requests are attributed to the oldest live harness of the
+embedded identity's tenant, so usage and provider settings match what the dashboard
+shows. Startup creates that tenant and a `my-agent` harness when the tenant has no
+harness yet. A request that does send `Authorization` is validated as usual, so an
+invalid key still gets 401. Accepted trade-off: any process on the same machine can
+use the gateway without a key; embedded mode already binds to `127.0.0.1` and
+restricts CORS, and it serves a single local user.
+
 The HTTP server always binds to `127.0.0.1`, regardless of `BIND_ADDRESS`. The
 `DATABASE_URL` host must be `localhost`, `127.0.0.0/8`, or `::1`; the bundled
 PostgreSQL process must itself listen only on loopback. Configure the desktop

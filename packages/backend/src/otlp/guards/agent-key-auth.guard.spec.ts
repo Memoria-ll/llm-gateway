@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
 import { AgentKeyAuthGuard } from './agent-key-auth.guard';
 import { hashKey } from '../../common/utils/hash.util';
+import { EMBEDDED_USER_ID } from '../../auth/embedded-identity';
 
 function testCacheKey(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -505,6 +506,118 @@ describe('AgentKeyAuthGuard', () => {
       await guard.canActivate(ctx2);
       expect(mockFindOne).not.toHaveBeenCalled();
     });
+  });
+
+  describe('embedded keyless loopback (MANIFEST_MODE=embedded)', () => {
+    const ORIGINAL_MODE = process.env['MANIFEST_MODE'];
+    let agentQb: Record<string, jest.Mock>;
+    let managerCreateQb: jest.Mock;
+
+    function createEmbeddedGuard(configOverrides: Record<string, string> = {}) {
+      mockConfig = createMockConfig(configOverrides);
+      const repo = buildMockRepo() as unknown as Record<string, unknown>;
+      agentQb = {
+        innerJoin: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        addOrderBy: jest.fn().mockReturnThis(),
+        getOne: jest
+          .fn()
+          .mockResolvedValue({ id: 'agent-1', name: 'my-agent', tenant_id: 'embedded-tenant' }),
+      };
+      managerCreateQb = jest.fn().mockReturnValue(agentQb);
+      repo.manager = { createQueryBuilder: managerCreateQb };
+      const g = new AgentKeyAuthGuard(repo as never, mockConfig);
+      g.clearCache();
+      return g;
+    }
+
+    beforeEach(() => {
+      process.env['MANIFEST_MODE'] = 'embedded';
+      guard.onModuleDestroy();
+      guard = createEmbeddedGuard();
+    });
+
+    afterEach(() => {
+      if (ORIGINAL_MODE === undefined) delete process.env['MANIFEST_MODE'];
+      else process.env['MANIFEST_MODE'] = ORIGINAL_MODE;
+    });
+
+    it('attributes a keyless loopback request to the oldest live harness of the embedded tenant', async () => {
+      const { ctx, req } = makeContext({}, '127.0.0.1');
+
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+
+      expect(req.ingestionContext).toEqual({
+        tenantId: 'embedded-tenant',
+        agentId: 'agent-1',
+        agentName: 'my-agent',
+        userId: EMBEDDED_USER_ID,
+      });
+      expect(agentQb.where).toHaveBeenCalledWith('t.owner_user_id = :ownerUserId', {
+        ownerUserId: EMBEDDED_USER_ID,
+      });
+      expect(agentQb.andWhere).toHaveBeenCalledWith('a.deleted_at IS NULL');
+      expect(agentQb.andWhere).toHaveBeenCalledWith('a.is_playground = false');
+      expect(agentQb.orderBy).toHaveBeenCalledWith('a.created_at', 'ASC');
+    });
+
+    it('prefers the embedded tenant over the dev loopback fallback', async () => {
+      guard.onModuleDestroy();
+      guard = createEmbeddedGuard({ 'app.nodeEnv': 'development' });
+      mockFindOne.mockResolvedValue({
+        tenant_id: 'dev-tenant',
+        agent_id: 'dev-agent',
+        agent: { name: 'demo-agent' },
+        tenant: { owner_user_id: 'dev-user' },
+      });
+      const { ctx, req } = makeContext({}, '::1');
+
+      await expect(guard.canActivate(ctx)).resolves.toBe(true);
+
+      expect(req.ingestionContext).toMatchObject({
+        tenantId: 'embedded-tenant',
+        agentId: 'agent-1',
+      });
+      expect(mockFindOne).not.toHaveBeenCalled();
+    });
+
+    it('rejects a keyless request when the embedded tenant has no harness', async () => {
+      agentQb.getOne.mockResolvedValue(null);
+      const { ctx } = makeContext({}, '127.0.0.1');
+      await expect(guard.canActivate(ctx)).rejects.toThrow('Authorization header required');
+    });
+
+    it('rejects a keyless request from a non-loopback peer without resolving a harness', async () => {
+      const { ctx } = makeContext({}, '192.168.1.100');
+      await expect(guard.canActivate(ctx)).rejects.toThrow('Authorization header required');
+      expect(managerCreateQb).not.toHaveBeenCalled();
+    });
+
+    it('still rejects an unknown mnfst key from loopback', async () => {
+      mockGetMany.mockResolvedValue([]);
+      const { ctx } = makeContext({ authorization: `Bearer mnfst_${'x'.repeat(20)}` }, '127.0.0.1');
+      await expect(guard.canActivate(ctx)).rejects.toThrow('Invalid API key');
+      expect(managerCreateQb).not.toHaveBeenCalled();
+    });
+
+    it('still rejects a non-mnfst token from loopback', async () => {
+      const { ctx } = makeContext({ authorization: 'Bearer not-a-key' }, '127.0.0.1');
+      await expect(guard.canActivate(ctx)).rejects.toThrow('Invalid API key format');
+      expect(managerCreateQb).not.toHaveBeenCalled();
+    });
+
+    it.each([undefined, 'selfhosted', 'cloud'])(
+      'keeps M001 for a keyless loopback request when MANIFEST_MODE is %s',
+      async (mode) => {
+        if (mode === undefined) delete process.env['MANIFEST_MODE'];
+        else process.env['MANIFEST_MODE'] = mode;
+        const { ctx } = makeContext({}, '127.0.0.1');
+        await expect(guard.canActivate(ctx)).rejects.toThrow('Authorization header required');
+        expect(managerCreateQb).not.toHaveBeenCalled();
+      },
+    );
   });
 
   it('handles request.ip being undefined without crashing', async () => {
