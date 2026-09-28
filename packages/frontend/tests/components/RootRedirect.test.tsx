@@ -27,11 +27,11 @@ describe("RootRedirect", () => {
     );
   });
 
-  it("redirects the root path to usage-based providers in Embedded mode", async () => {
+  it("redirects the root path to subscriptions in Embedded mode", async () => {
     mockEmbeddedMode = true;
     render(() => <RootRedirect />);
     await vi.waitFor(() =>
-      expect(mockNavigate).toHaveBeenCalledWith("/providers/usage-based", { replace: true }),
+      expect(mockNavigate).toHaveBeenCalledWith("/providers/subscriptions", { replace: true }),
     );
   });
 });

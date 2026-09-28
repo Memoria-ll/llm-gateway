@@ -5,7 +5,7 @@ import { checkIsEmbeddedMode } from '../services/setup-status.js';
 const RootRedirect: Component = () => {
   const navigate = useNavigate();
   onMount(async () => {
-    navigate((await checkIsEmbeddedMode()) ? '/providers/usage-based' : '/overview', {
+    navigate((await checkIsEmbeddedMode()) ? '/providers/subscriptions' : '/overview', {
       replace: true,
     });
   });

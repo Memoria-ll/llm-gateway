@@ -16,7 +16,7 @@ const GuestGuard: ParentComponent = (props) => {
 
   onMount(async () => {
     if (await checkIsEmbeddedMode()) {
-      navigate('/providers/usage-based', { replace: true });
+      navigate('/providers/subscriptions', { replace: true });
       return;
     }
     const needsSetup = await checkNeedsSetup();

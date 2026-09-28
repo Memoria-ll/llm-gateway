@@ -6,6 +6,7 @@ const mockNavigate = vi.fn();
 const mockCheckNeedsSetup = vi.fn();
 const mockLocationAssign = vi.fn();
 let mockSessionData: any = { data: null, isPending: false };
+let mockEmbeddedMode = false;
 let mockSearchParams: Record<string, string | string[]> = {};
 let mockLocation = { search: '' };
 let setMockSession: ((v: any) => void) | undefined;
@@ -23,7 +24,7 @@ vi.mock('../../src/services/auth-client.js', () => ({
 }));
 
 vi.mock('../../src/services/setup-status.js', () => ({
-  checkIsEmbeddedMode: () => Promise.resolve(false),
+  checkIsEmbeddedMode: () => Promise.resolve(mockEmbeddedMode),
   checkNeedsSetup: (...args: unknown[]) => mockCheckNeedsSetup(...args),
 }));
 
@@ -34,6 +35,7 @@ describe('GuestGuard', () => {
     vi.clearAllMocks();
     localStorage.clear();
     mockSessionData = { data: null, isPending: false };
+    mockEmbeddedMode = false;
     mockSearchParams = {};
     mockLocation = { search: '' };
     mockCheckNeedsSetup.mockResolvedValue(false);
@@ -47,6 +49,18 @@ describe('GuestGuard', () => {
     ));
     await vi.waitFor(() => {
       expect(screen.getByText('Guest content')).not.toBeNull();
+    });
+  });
+
+  it('redirects embedded guests to subscriptions', async () => {
+    mockEmbeddedMode = true;
+    render(() => (
+      <GuestGuard>
+        <span>Guest content</span>
+      </GuestGuard>
+    ));
+    await vi.waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith('/providers/subscriptions', { replace: true });
     });
   });
 
